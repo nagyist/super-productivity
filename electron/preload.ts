@@ -13,7 +13,7 @@ const _invoke: (channel: IPCEventValue, ...args: any[]) => Promise<unknown> = (
 
 const ea: ElectronAPI = {
   on: (channel: string, listener: (event: IpcRendererEvent, ...args: any[]) => void) => {
-    // NOTE: there is no proper way to unsubscribe apart from unsusbscribing all
+    // NOTE: there is no proper way to unsubscribe apart from unsubscribing all
     ipcRenderer.on(channel, listener);
   },
   // INVOKE
@@ -28,13 +28,17 @@ const ea: ElectronAPI = {
     _invoke('FILE_SYNC_GET_REV_AND_CLIENT_UPDATE', backupPath) as Promise<
       { rev: string; clientUpdate?: number } | SyncGetRevResult
     >,
-  fileSyncSave: (backupPath) =>
-    _invoke('FILE_SYNC_SAVE', backupPath) as Promise<string | Error>,
-  fileSyncLoad: (backupPath) =>
-    _invoke('FILE_SYNC_LOAD', backupPath) as Promise<{
+  fileSyncSave: (filePath) =>
+    _invoke('FILE_SYNC_SAVE', filePath) as Promise<string | Error>,
+  fileSyncLoad: (filePath) =>
+    _invoke('FILE_SYNC_LOAD', filePath) as Promise<{
       rev: string;
       dataStr: string | undefined;
     }>,
+  checkDirExists: (dirPath) =>
+    _invoke('CHECK_DIR_EXISTS', dirPath) as Promise<true | Error>,
+
+  pickDirectory: () => _invoke('PICK_DIRECTORY') as Promise<string | undefined>,
 
   // STANDARD
   // --------
@@ -42,6 +46,7 @@ const ea: ElectronAPI = {
     webFrame.setZoomFactor(zoomFactor);
   },
   getZoomFactor: () => webFrame.getZoomFactor(),
+  isLinux: () => process.platform === 'linux',
   isMacOS: () => process.platform === 'darwin',
   isSnap: () => process && process.env && !!process.env.SNAP,
 
@@ -55,6 +60,7 @@ const ea: ElectronAPI = {
   shutdownNow: () => _send('SHUTDOWN_NOW'),
   reloadMainWin: () => _send('RELOAD_MAIN_WIN'),
   openDevTools: () => _send('OPEN_DEV_TOOLS'),
+  showEmojiPanel: () => _send('SHOW_EMOJI_PANEL'),
   informAboutAppReady: () => _send('APP_READY'),
 
   openPath: (path: string) => _send('OPEN_PATH', path),
