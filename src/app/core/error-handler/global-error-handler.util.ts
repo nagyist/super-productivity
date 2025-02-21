@@ -1,12 +1,12 @@
 import { HANDLED_ERROR_PROP_STR, IS_ELECTRON } from '../../app.constants';
-import { environment } from '../../../environments/environment';
-import * as StackTrace from 'stacktrace-js';
-import * as pThrottle from 'p-throttle';
-import * as newGithubIssueUrl from 'new-github-issue-url';
+import StackTrace from 'stacktrace-js';
+import pThrottle from 'p-throttle';
+import newGithubIssueUrl from 'new-github-issue-url';
 import { getBeforeLastErrorActionLog } from '../../util/action-logger';
 import { download } from '../../util/download';
 import { AppDataComplete } from '../../imex/sync/sync.model';
 import { privacyExport } from '../../imex/file-imex/privacy-export';
+import { getAppVersionStr } from '../../util/get-app-version-str';
 
 let isWasErrorAlertCreated = false;
 
@@ -38,6 +38,8 @@ export const logAdvancedStacktrace = (
 ): Promise<unknown> =>
   _getStacktraceThrottled(origErr)
     .then((stack) => {
+      document.getElementById('error-fetching-info-wrapper')?.remove();
+
       if (additionalLogFn) {
         additionalLogFn(stack);
       }
@@ -51,7 +53,7 @@ export const logAdvancedStacktrace = (
 
       if (githubIssueLink) {
         const errEscaped = _cleanHtml(origErr as string);
-        githubIssueLink.setAttribute('href', getGithubUrl(errEscaped, stack));
+        githubIssueLink.setAttribute('href', getGithubErrorUrl(errEscaped, stack));
       }
 
       // NOTE: there is an issue with this sometimes -> https://github.com/stacktracejs/stacktrace.js/issues/202
@@ -73,9 +75,9 @@ export const createErrorAlert = (
   if (isWasErrorAlertCreated) {
     return;
   }
-  // it seems for whatever reasons, sometimes we get tags in our error which break the html
+  // it seems for whatever reason, sometimes we get tags in our error which break the html
   const errEscaped = _cleanHtml(err);
-  const githubUrl = getGithubUrl(errEscaped, stackTrace);
+  const githubUrl = getGithubErrorUrl(errEscaped, stackTrace);
 
   const errorAlert = document.createElement('div');
   errorAlert.classList.add('global-error-alert');
@@ -87,6 +89,11 @@ export const createErrorAlert = (
     <p><a href="${githubUrl}" id="github-issue-url" target="_blank">! Please copy & report !</a></p>
     <!-- second error is needed, because it might be too long -->
     <pre style="line-height: 1.3;">${errEscaped}</pre>
+
+    <div id="error-fetching-info-wrapper">
+      <div>Trying to load more info...</div>
+      <div class="spinner"></div>
+    </div>
 
     <pre id="stack-trace"
          style="line-height: 1.3; text-align: left; max-height: 240px; font-size: 12px; overflow: auto;">${stackTrace}</pre>
@@ -159,9 +166,9 @@ export const createErrorAlert = (
 
 export const getSimpleMeta = (): string => {
   const n = window.navigator;
-  return `META: SP${environment.version} ${IS_ELECTRON ? 'Electron' : 'Browser'} – ${
+  return `META: SP${getAppVersionStr()} __ ${IS_ELECTRON ? 'Electron' : 'Browser'} – ${
     n.language
-  } – ${n.platform} – ${n.userAgent}`;
+  } – ${n.platform} – ${n.language} – UA:${n.userAgent}`;
 };
 
 export const isHandledError = (err: unknown): boolean => {
@@ -180,25 +187,31 @@ export const isHandledError = (err: unknown): boolean => {
   );
 };
 
-const getGithubUrl = (errEscaped: string, stackTrace: string): string => {
+export const getGithubErrorUrl = (
+  title: string,
+  stackTrace?: string,
+  isHideActionsBeforeError = false,
+): string => {
   return newGithubIssueUrl({
     user: 'johannesjo',
     repo: 'super-productivity',
-    title: errEscaped,
-    body: getGithubIssueErrorMarkdown(stackTrace),
+    title: title,
+    body: getGithubIssueErrorMarkdown(stackTrace, isHideActionsBeforeError),
   });
 };
 
-const getGithubIssueErrorMarkdown = (stacktrace: string): string => {
+const getGithubIssueErrorMarkdown = (
+  stacktrace?: string,
+  isHideActionsBeforeError = false,
+): string => {
   const code = '```';
-  return `### Steps to Reproduce
+  let txt = `### Steps to Reproduce
 <!-- !!! Please provide an unambiguous set of steps to reproduce this bug! !!! -->
 <!-- !!! Please provide an unambiguous set of steps to reproduce this bug! !!! -->
 1.
 2.
 3.
 4.
-
 
 
 ### Error Log (Desktop only)
@@ -212,17 +225,28 @@ on Windows: %USERPROFILE%/AppData/Roaming/superProductivity/logs/main.log
 ### Console Output
 <!-- Is there any output if you press Ctrl+Shift+i (Cmd+Alt+i for mac) in the console tab? If so please post it here. -->
 
+### Meta Info
+${getSimpleMeta()}
+`;
+
+  if (stacktrace) {
+    txt += `
+
 ### Stacktrace
 ${code}
 ${stacktrace}
 ${code}
+`;
+  }
 
-### Meta Info
-${getSimpleMeta()}
+  if (!isHideActionsBeforeError) {
+    txt += `
 
 ### Actions Before Error
 ${code}
 ${getBeforeLastErrorActionLog().join(' \n')}
-${code}
-`;
+${code}`;
+  }
+
+  return txt;
 };

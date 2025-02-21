@@ -36,7 +36,13 @@ export interface ElectronAPI {
   fileSyncLoad(args: {
     filePath: string;
     localRev: string | null;
-  }): Promise<{ rev: string; dataStr: string | undefined }>;
+  }): Promise<{ rev: string; dataStr: string | undefined } | Error>;
+
+  checkDirExists(args: { dirPath: string }): Promise<true | Error>;
+
+  pickDirectory(): Promise<string | undefined>;
+
+  // checkDirExists(dirPath: string): Promise<true | Error>;
 
   // STANDARD
   // --------
@@ -48,6 +54,8 @@ export interface ElectronAPI {
 
   openExternalUrl(url: string): void;
 
+  isLinux(): boolean;
+
   isMacOS(): boolean;
 
   isSnap(): boolean;
@@ -57,6 +65,8 @@ export interface ElectronAPI {
   reloadMainWin(): void;
 
   openDevTools(): void;
+
+  showEmojiPanel(): void;
 
   relaunch(): void;
 
@@ -94,7 +104,7 @@ export interface ElectronAPI {
     jiraCfg: JiraCfg;
   }): void;
 
-  jiraSetupImgHeaders(args: { jiraCfg: JiraCfg; wonkyCookie?: string }): void;
+  jiraSetupImgHeaders(args: { jiraCfg: JiraCfg }): void;
 
   backupAppData(appData: AppDataComplete): void;
 

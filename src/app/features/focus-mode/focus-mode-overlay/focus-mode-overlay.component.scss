@@ -10,9 +10,22 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  -webkit-app-region: no-drag !important;
 }
 
-header {
+.mac-os-drag-bar {
+  -webkit-app-region: drag;
+  height: 50px;
+  width: 160px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  display: none;
+
+  :host-context(.isMac) & {
+    display: block;
+  }
 }
 
 main {
@@ -23,7 +36,12 @@ main {
   justify-content: center;
   align-items: center;
   flex-direction: column;
+}
+
+.scroll-container {
   overflow: auto;
+  max-height: 100%;
+  width: 100%;
 }
 
 .close-btn {
@@ -32,13 +50,17 @@ main {
   right: $s;
   width: 56px;
   height: 56px;
-  z-index: 3;
+  z-index: 5;
   @include mousePrimaryDevice {
-    visibility: hidden;
+    transition: opacity $transition-leave;
+    //visibility: hidden;
+    opacity: 0;
   }
 
   :host:hover & {
-    visibility: visible;
+    transition: opacity $transition-enter;
+    //visibility: visible;
+    opacity: 1;
   }
 
   mat-icon {
@@ -60,4 +82,15 @@ main {
 .pomodoro-info-msg {
   font-size: 20px;
   margin-bottom: 16px;
+}
+
+.focus-mode-select-mode {
+  margin-bottom: auto;
+  margin-top: 16px;
+}
+
+focus-mode-task-selection,
+focus-mode-duration-selection {
+  margin-bottom: auto;
+  margin-top: -32px;
 }

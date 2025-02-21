@@ -1,9 +1,13 @@
 import { createAction, props } from '@ngrx/store';
-import { FocusModePage } from '../focus-mode.const';
+import { FocusModeMode, FocusModePage } from '../focus-mode.const';
 
 export const setFocusSessionActivePage = createAction(
   '[FocusMode] Set Focus Active Page',
   props<{ focusActivePage: FocusModePage }>(),
+);
+export const setFocusModeMode = createAction(
+  '[FocusMode] Set Focus Mode Mode',
+  props<{ mode: FocusModeMode }>(),
 );
 
 export const setFocusSessionDuration = createAction(
@@ -12,8 +16,12 @@ export const setFocusSessionDuration = createAction(
 );
 
 export const setFocusSessionTimeToGo = createAction(
-  '[FocusMode] Set focus session elapsed time',
+  '[FocusMode] Set focus session time to go',
   props<{ focusSessionTimeToGo: number }>(),
+);
+export const setFocusSessionTimeElapsed = createAction(
+  '[FocusMode] Set focus session elapsed time',
+  props<{ focusSessionTimeElapsed: number }>(),
 );
 export const startFocusSession = createAction('[FocusMode] Start focus session');
 export const cancelFocusSession = createAction('[FocusMode] Cancel Focus Session');

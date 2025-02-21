@@ -1,9 +1,11 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import {
   cancelFocusSession,
   focusSessionDone,
+  setFocusModeMode,
   setFocusSessionActivePage,
+  setFocusSessionTimeElapsed,
   setFocusSessionTimeToGo,
   showFocusOverlay,
   startFocusSession,
@@ -18,6 +20,7 @@ import {
   mapTo,
   pairwise,
   scan,
+  startWith,
   switchMap,
   switchMapTo,
   tap,
@@ -26,6 +29,7 @@ import {
 import { EMPTY, interval, merge, Observable, of } from 'rxjs';
 import { TaskService } from '../../tasks/task.service';
 import {
+  selectFocusModeMode,
   selectFocusSessionDuration,
   selectFocusSessionProgress,
   selectIsFocusSessionRunning,
@@ -35,8 +39,9 @@ import { unsetCurrentTask } from '../../tasks/store/task.actions';
 import { playSound } from '../../../util/play-sound';
 import { IS_ELECTRON } from '../../../app.constants';
 import { IdleService } from '../../idle/idle.service';
-import { FocusModePage } from '../focus-mode.const';
+import { FocusModeMode, FocusModePage } from '../focus-mode.const';
 import { selectFocusModeConfig } from '../../config/store/global-config.reducer';
+import { LS } from '../../../core/persistence/storage-keys.const';
 
 const TICK_DURATION = 500;
 const SESSION_DONE_SOUND = 'positive.ogg';
@@ -45,6 +50,12 @@ const SESSION_DONE_SOUND = 'positive.ogg';
 
 @Injectable()
 export class FocusModeEffects {
+  private _store = inject(Store);
+  private _actions$ = inject(Actions);
+  private _idleService = inject(IdleService);
+  private _globalConfigService = inject(GlobalConfigService);
+  private _taskService = inject(TaskService);
+
   private _isRunning$ = this._store.select(selectIsFocusSessionRunning);
   private _sessionDuration$ = this._store.select(selectFocusSessionDuration);
   private _sessionProgress$ = this._store.select(selectFocusSessionProgress);
@@ -60,18 +71,32 @@ export class FocusModeEffects {
     map((tick) => tick * -1),
   );
 
-  private _currentSessionTime$: Observable<number> = merge(
-    this._sessionDuration$,
-    this._tick$,
-    this._actions$.pipe(
-      ofType(startFocusSession, cancelFocusSession),
-      switchMap(() => this._sessionDuration$.pipe(first())),
-    ),
-  ).pipe(
-    scan((acc, value) => {
-      return value < 0 ? acc + value : value;
-    }),
-  );
+  private _currentSessionTime$: Observable<number> = this._store
+    .select(selectFocusModeMode)
+    .pipe(
+      switchMap((mode) =>
+        mode === FocusModeMode.Countdown
+          ? merge(
+              this._sessionDuration$,
+              this._tick$,
+              this._actions$.pipe(
+                ofType(startFocusSession, cancelFocusSession),
+                switchMap(() => this._sessionDuration$.pipe(first())),
+              ),
+            ).pipe(
+              scan((acc, value) => {
+                return value < 0 ? acc + value : value;
+              }),
+            )
+          : merge(this._tick$).pipe(
+              // first val is negative otherwise
+              startWith(500),
+              scan((acc, value) => {
+                return value < 0 ? acc - value : value;
+              }),
+            ),
+      ),
+    );
 
   autoStartFocusMode$ = createEffect(() => {
     return this._store.select(selectFocusModeConfig).pipe(
@@ -89,11 +114,17 @@ export class FocusModeEffects {
   });
   setElapsedTime$ = createEffect(() => {
     return this._currentSessionTime$.pipe(
-      map((focusSessionTimeToGo) =>
-        focusSessionTimeToGo >= 0
+      withLatestFrom(this._store.select(selectFocusModeMode)),
+      map(([focusSessionTimeToGo, mode]) => {
+        if (mode === FocusModeMode.Flowtime) {
+          return setFocusSessionTimeElapsed({
+            focusSessionTimeElapsed: focusSessionTimeToGo,
+          });
+        }
+        return focusSessionTimeToGo >= 0
           ? setFocusSessionTimeToGo({ focusSessionTimeToGo })
-          : focusSessionDone(),
-      ),
+          : focusSessionDone();
+      }),
     );
   });
   stopTrackingOnOnCancel$ = createEffect(() => {
@@ -166,11 +197,14 @@ export class FocusModeEffects {
       { dispatch: false },
     );
 
-  constructor(
-    private _store: Store,
-    private _actions$: Actions,
-    private _idleService: IdleService,
-    private _globalConfigService: GlobalConfigService,
-    private _taskService: TaskService,
-  ) {}
+  modeToLS$ = createEffect(
+    () =>
+      this._actions$.pipe(
+        ofType(setFocusModeMode),
+        tap(({ mode }) => {
+          localStorage.setItem(LS.FOCUS_MODE_MODE, mode);
+        }),
+      ),
+    { dispatch: false },
+  );
 }

@@ -1,3 +1,5 @@
+import { Observable } from 'rxjs';
+
 export enum BannerId {
   TakeABreak = 'TakeABreak',
   StartTrackingReminder = 'StartTrackingReminder',
@@ -5,6 +7,10 @@ export enum BannerId {
   InstallWebApp = 'InstallWebApp',
   Offline = 'Offline',
   TimeEstimateExceeded = 'TimeEstimateExceeded',
+  CalendarEvent = 'CalendarEvent',
+  ReminderCountdown = 'ReminderCountdown',
+  FocusMode = 'FocusMode',
+  SimpleCounterCountdownComplete = 'SimpleCounterCountdownComplete',
 }
 
 export type BannerType = 'ERROR';
@@ -24,5 +30,9 @@ export interface Banner {
   action?: BannerAction;
   action2?: BannerAction;
   action3?: BannerAction;
+  isHideDismissBtn?: boolean;
+  progress$?: Observable<number>;
+  timer$?: Observable<number>;
+  hideWhen$?: Observable<unknown>;
   img?: string;
 }
