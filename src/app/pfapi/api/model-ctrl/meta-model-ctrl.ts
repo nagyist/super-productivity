@@ -10,6 +10,8 @@ import {
 } from '../errors/errors';
 import { validateLocalMeta } from '../util/validate-local-meta';
 import { PFEventEmitter } from '../util/events';
+import { devError } from '../../../util/dev-error';
+import { incrementVectorClock, limitVectorClockSize } from '../util/vector-clock';
 
 export const DEFAULT_META_MODEL: LocalMeta = {
   crossModelVersion: 1,
@@ -17,6 +19,8 @@ export const DEFAULT_META_MODEL: LocalMeta = {
   lastUpdate: 0,
   metaRev: null,
   lastSyncedUpdate: null,
+  vectorClock: {},
+  lastSyncedVectorClock: null,
 };
 
 /**
@@ -61,11 +65,11 @@ export class MetaModelCtrl {
    * @param isIgnoreDBLock Whether to ignore database locks
    * @throws {MetaNotReadyError} When metamodel is not loaded yet
    */
-  updateRevForModel<MT extends ModelBase>(
+  async updateRevForModel<MT extends ModelBase>(
     modelId: string,
     modelCfg: ModelCfg<MT>,
     isIgnoreDBLock = false,
-  ): void {
+  ): Promise<void> {
     pfLog(2, `${MetaModelCtrl.L}.${this.updateRevForModel.name}()`, modelId, {
       modelCfg,
       inMemory: this._metaModelInMemory,
@@ -77,24 +81,40 @@ export class MetaModelCtrl {
     const metaModel = this._getMetaModelOrThrow(modelId, modelCfg);
     const timestamp = Date.now();
 
-    this.save(
-      {
-        ...metaModel,
-        lastUpdate: timestamp,
+    // Get client ID for vector clock
+    const clientId = await this.loadClientId();
 
-        ...(modelCfg.isMainFileModel
-          ? {}
-          : {
-              revMap: {
-                ...metaModel.revMap,
-                [modelId]: timestamp.toString(),
-              },
-            }),
-        // as soon as we save a related model, we are using the local crossModelVersion (while other updates might be from importing remote data)
-        crossModelVersion: this.crossModelVersion,
-      },
-      isIgnoreDBLock,
-    );
+    // Create action string (max 100 chars)
+    const actionStr = `${modelId} => ${new Date(timestamp).toISOString()}`;
+    const lastUpdateAction =
+      actionStr.length > 100 ? actionStr.substring(0, 97) + '...' : actionStr;
+
+    // Update vector clock
+    const currentVectorClock = metaModel.vectorClock || {};
+    let newVectorClock = incrementVectorClock(currentVectorClock, clientId);
+
+    // Apply size limiting to prevent unbounded growth
+    newVectorClock = limitVectorClockSize(newVectorClock, clientId);
+
+    const updatedMeta = {
+      ...metaModel,
+      lastUpdate: timestamp,
+      lastUpdateAction,
+      vectorClock: newVectorClock,
+
+      ...(modelCfg.isMainFileModel
+        ? {}
+        : {
+            revMap: {
+              ...metaModel.revMap,
+              [modelId]: timestamp.toString(),
+            },
+          }),
+      // as soon as we save a related model, we are using the local crossModelVersion (while other updates might be from importing remote data)
+      crossModelVersion: this.crossModelVersion,
+    };
+
+    await this.save(updatedMeta, isIgnoreDBLock);
   }
 
   /**
@@ -106,20 +126,47 @@ export class MetaModelCtrl {
    * @throws {InvalidMetaError} When metamodel is invalid
    */
   save(metaModel: LocalMeta, isIgnoreDBLock = false): Promise<unknown> {
-    pfLog(2, `${MetaModelCtrl.L}.${this.save.name}()`, metaModel);
-    if (typeof metaModel.lastUpdate !== 'number') {
-      throw new InvalidMetaError(
-        `${MetaModelCtrl.L}.${this.save.name}()`,
-        'lastUpdate not found',
-      );
-    }
+    pfLog(2, `${MetaModelCtrl.L}.${this.save.name}()`, {
+      metaModel,
+      lastSyncedUpdate: metaModel.lastSyncedUpdate,
+      lastUpdate: metaModel.lastUpdate,
+      isIgnoreDBLock,
+    });
 
     // NOTE: in order to not mess up separate model updates started at the same time, we need to update synchronously as well
     this._metaModelInMemory = validateLocalMeta(metaModel);
     this._ev.emit('metaModelChange', metaModel);
     this._ev.emit('syncStatusChange', 'UNKNOWN_OR_CHANGED');
 
-    return this._db.save(MetaModelCtrl.META_MODEL_ID, metaModel, isIgnoreDBLock);
+    // Add detailed logging before saving
+    pfLog(2, `${MetaModelCtrl.L}.${this.save.name}() about to save to DB:`, {
+      id: MetaModelCtrl.META_MODEL_ID,
+      lastSyncedUpdate: metaModel.lastSyncedUpdate,
+      lastUpdate: metaModel.lastUpdate,
+      willMatch: metaModel.lastSyncedUpdate === metaModel.lastUpdate,
+    });
+
+    const savePromise = this._db.save(
+      MetaModelCtrl.META_MODEL_ID,
+      metaModel,
+      isIgnoreDBLock,
+    );
+
+    // Log after save completes
+    savePromise
+      .then(() => {
+        pfLog(
+          2,
+          `${MetaModelCtrl.L}.${this.save.name}() DB save completed successfully`,
+          metaModel,
+        );
+      })
+      .catch((error) => {
+        devError('DB save for meta file failed');
+        pfLog(0, `${MetaModelCtrl.L}.${this.save.name}() DB save failed`, error);
+      });
+
+    return savePromise;
   }
 
   /**
@@ -136,16 +183,52 @@ export class MetaModelCtrl {
     }
 
     const data = (await this._db.load(MetaModelCtrl.META_MODEL_ID)) as LocalMeta;
+
+    // Add debug logging
+    pfLog(2, `${MetaModelCtrl.L}.${this.load.name}() loaded from DB:`, {
+      data,
+      hasData: !!data,
+      lastSyncedUpdate: data?.lastSyncedUpdate,
+      lastUpdate: data?.lastUpdate,
+    });
+
     // Initialize if not found
     if (!data) {
       this._metaModelInMemory = {
         ...DEFAULT_META_MODEL,
         crossModelVersion: this.crossModelVersion,
       };
+      pfLog(2, `${MetaModelCtrl.L}.${this.load.name}() initialized with defaults`);
       return this._metaModelInMemory;
     }
     if (!data.revMap) {
       throw new InvalidMetaError('loadMetaModel: revMap not found');
+    }
+
+    // Log the loaded data
+    pfLog(2, `${MetaModelCtrl.L}.${this.load.name}() loaded valid data:`, {
+      lastUpdate: data.lastUpdate,
+      lastSyncedUpdate: data.lastSyncedUpdate,
+      metaRev: data.metaRev,
+      hasRevMap: !!data.revMap,
+      revMapKeys: Object.keys(data.revMap || {}),
+      vectorClock: data.vectorClock,
+      lastSyncedVectorClock: data.lastSyncedVectorClock,
+      hasVectorClock: !!data.vectorClock,
+      vectorClockKeys: data.vectorClock ? Object.keys(data.vectorClock) : [],
+    });
+
+    // Ensure vector clock fields are initialized for old data
+    if (data.vectorClock === undefined) {
+      data.vectorClock = {};
+      pfLog(2, `${MetaModelCtrl.L}.${this.load.name}() initialized missing vectorClock`);
+    }
+    if (data.lastSyncedVectorClock === undefined) {
+      data.lastSyncedVectorClock = null;
+      pfLog(
+        2,
+        `${MetaModelCtrl.L}.${this.load.name}() initialized missing lastSyncedVectorClock`,
+      );
     }
 
     this._metaModelInMemory = data;
@@ -220,6 +303,16 @@ export class MetaModelCtrl {
    *
    * @returns Generated client ID
    */
+  async generateNewClientId(): Promise<string> {
+    const newClientId = this._generateClientId();
+    // Save the new client ID
+    await this._db.save(MetaModelCtrl.CLIENT_ID, newClientId, true);
+    pfLog(1, `${MetaModelCtrl.L}.generateNewClientId() generated new client ID`, {
+      newClientId,
+    });
+    return newClientId;
+  }
+
   private _generateClientId(): string {
     pfLog(2, `${MetaModelCtrl.L}.${this._generateClientId.name}()`);
     return getEnvironmentId() + '_' + Date.now();

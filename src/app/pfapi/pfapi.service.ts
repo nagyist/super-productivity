@@ -28,6 +28,7 @@ import {
   filter,
   map,
   shareReplay,
+  startWith,
 } from 'rxjs/operators';
 import { fromPfapiEvent, pfapiEventAndInitialAfter } from './pfapi-helper';
 import { DataInitStateService } from '../core/data-init/data-init-state.service';
@@ -87,6 +88,7 @@ export class PfapiService {
   public readonly isSyncInProgress$: Observable<boolean> = this.syncState$.pipe(
     filter((state) => state !== 'UNKNOWN_OR_CHANGED'),
     map((state) => state === 'SYNCING'),
+    startWith(false),
     distinctUntilChanged(),
     shareReplay(1),
   );
@@ -135,11 +137,12 @@ export class PfapiService {
     data: AppDataCompleteNew | CompleteBackup<PfapiAllModelCfg>,
     isSkipLegacyWarnings: boolean = false,
     isSkipReload: boolean = false,
+    isForceConflict: boolean = false,
   ): Promise<void> {
     try {
       this._imexViewService.setDataImportInProgress(true);
       if ('crossModelVersion' in data && 'timestamp' in data) {
-        await this.pf.importCompleteBackup(data, isSkipLegacyWarnings);
+        await this.pf.importCompleteBackup(data, isSkipLegacyWarnings, isForceConflict);
       } else {
         await this.pf.importCompleteBackup(
           {
@@ -150,6 +153,7 @@ export class PfapiService {
             crossModelVersion: 0,
           },
           isSkipLegacyWarnings,
+          isForceConflict,
         );
       }
 

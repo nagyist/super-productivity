@@ -9,6 +9,7 @@ import {
   ModelCfgToModelCtrl,
   PfapiBaseCfg,
   PrivateCfgByProviderId,
+  VectorClock,
 } from './pfapi.model';
 import { SyncService } from './sync/sync.service';
 import { Database } from './db/database';
@@ -50,6 +51,8 @@ export class Pfapi<const MD extends ModelCfgs> {
     isCompress: false,
     isEncrypt: false,
   });
+
+  private _isSyncInProgress = false;
 
   public readonly wasDataMigratedInitiallyPromise: Promise<void>;
 
@@ -131,12 +134,25 @@ export class Pfapi<const MD extends ModelCfgs> {
   }
 
   private async _wrapSyncAction<T>(logPrefix: string, fn: () => Promise<T>): Promise<T> {
+    // Check if sync is already in progress
+    if (this._isSyncInProgress) {
+      pfLog(2, `${logPrefix} SKIPPED - sync already in progress`);
+      throw new Error('Sync already in progress');
+    }
+
+    // Set sync in progress flag
+    this._isSyncInProgress = true;
+
+    // Lock the database during sync to prevent concurrent modifications
+    this.db.lock();
+
     try {
       pfLog(2, `${logPrefix}`);
       this.ev.emit('syncStatusChange', 'SYNCING');
       const result = await fn();
       pfLog(2, `${logPrefix} result:`, result);
       this.ev.emit('syncDone', result);
+      // Keep lock until after status change to prevent race conditions
       this.ev.emit('syncStatusChange', 'IN_SYNC');
       return result;
     } catch (e) {
@@ -144,6 +160,10 @@ export class Pfapi<const MD extends ModelCfgs> {
       this.ev.emit('syncDone', e);
       this.ev.emit('syncStatusChange', 'ERROR');
       throw e;
+    } finally {
+      // Always unlock the database and clear sync flag, even on error
+      this.db.unlock();
+      this._isSyncInProgress = false;
     }
   }
 
@@ -266,8 +286,10 @@ export class Pfapi<const MD extends ModelCfgs> {
   async importCompleteBackup(
     backup: CompleteBackup<MD>,
     isSkipLegacyWarnings: boolean = false,
+    isForceConflict: boolean = false,
   ): Promise<void> {
-    return await this.importAllSycModelData({
+    // First import the data
+    await this.importAllSycModelData({
       data: backup.data,
       crossModelVersion: backup.crossModelVersion,
       // TODO maybe also make model versions work
@@ -275,6 +297,28 @@ export class Pfapi<const MD extends ModelCfgs> {
       isAttemptRepair: true,
       isSkipLegacyWarnings,
     });
+
+    // If we want to force a conflict, reset sync metadata with fresh vector clock
+    if (isForceConflict) {
+      // Generate a new client ID to represent this as a fresh client
+      const newClientId = await this.metaModel.generateNewClientId();
+
+      // Create a fresh vector clock with just this client
+      const freshVectorClock: VectorClock = {
+        [newClientId]: 1,
+      };
+
+      await this.metaModel.save({
+        crossModelVersion: backup.crossModelVersion,
+        lastUpdate: Date.now(),
+        lastSyncedUpdate: null, // No sync history
+        lastSyncedVectorClock: null, // No sync history
+        vectorClock: freshVectorClock,
+        metaRev: null, // No remote rev
+        lastUpdateAction: 'Restored from backup with fresh sync state',
+        revMap: {}, // Will be populated on next save
+      });
+    }
   }
 
   async importAllSycModelData({
@@ -354,9 +398,7 @@ export class Pfapi<const MD extends ModelCfgs> {
         });
       });
       await Promise.all(promises);
-      this.db.unlock();
     } catch (e) {
-      this.db.unlock();
       const backup = await this.tmpBackupService.load();
       // isBackupImport is used to prevent endless loop
       if (backup && !isBackupImport) {
@@ -372,6 +414,8 @@ export class Pfapi<const MD extends ModelCfgs> {
         }
       }
       throw e;
+    } finally {
+      this.db.unlock();
     }
 
     if (isBackupData) {
