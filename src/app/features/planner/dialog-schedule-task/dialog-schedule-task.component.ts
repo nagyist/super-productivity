@@ -24,7 +24,8 @@ import { PlannerActions } from '../store/planner.actions';
 import { getWorklogStr } from '../../../util/get-work-log-str';
 import { DatePipe } from '@angular/common';
 import { SnackService } from '../../../core/snack/snack.service';
-import { removeReminderFromTask, unScheduleTask } from '../../tasks/store/task.actions';
+import { removeReminderFromTask } from '../../tasks/store/task.actions';
+import { TaskSharedActions } from '../../../root-store/meta/task-shared.actions';
 import { truncate } from '../../../util/truncate';
 import { TASK_REMINDER_OPTIONS } from './task-reminder-options.const';
 import { FormsModule } from '@angular/forms';
@@ -50,6 +51,7 @@ import {
 import { MatSelect } from '@angular/material/select';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MatInput } from '@angular/material/input';
+import { Log } from '../../../core/log';
 
 const DEFAULT_TIME = '09:00';
 
@@ -121,7 +123,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
           reminder.remindAt,
         );
       } else {
-        console.warn('No reminder found for task', this.data.task);
+        Log.err('No reminder found for task', this.data.task);
       }
       // for tasks without anything scheduled
     } else if (!this.data.task.dueWithTime) {
@@ -183,10 +185,10 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
 
   onKeyDownOnCalendar(ev: KeyboardEvent): void {
     this._timeCheckVal = null;
-    // console.log(ev.key, ev.keyCode);
+    // Log.log(ev.key, ev.keyCode);
     if (ev.key === 'Enter' || ev.keyCode === 32) {
       this.isShowEnterMsg = true;
-      // console.log(
+      // Log.log(
       //   'check to submit',
       //   this.selectedDate &&
       //     new Date(this.selectedDate).getTime() ===
@@ -207,7 +209,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
   }
 
   onTimeKeyDown(ev: KeyboardEvent): void {
-    // console.log('ev.key!', ev.key);
+    // Log.log('ev.key!', ev.key);
     if (ev.key === 'Enter') {
       this.isShowEnterMsg = true;
 
@@ -225,7 +227,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
   }
 
   dateSelected(newDate: Date): void {
-    // console.log('dateSelected', typeof newDate, newDate, this.selectedDate);
+    // Log.log('dateSelected', typeof newDate, newDate, this.selectedDate);
     // we do the timeout is there to make sure this happens after our click handler
     setTimeout(() => {
       this.selectedDate = new Date(newDate);
@@ -237,7 +239,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
     // TODO simplify
     if (this.data.task.reminderId) {
       this._store.dispatch(
-        unScheduleTask({
+        TaskSharedActions.unscheduleTask({
           id: this.data.task.id,
           reminderId: this.data.task.reminderId,
         }),
@@ -245,7 +247,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
     } else if (this.plannedDayForTask === getWorklogStr()) {
       // to cover edge cases
       this._store.dispatch(
-        unScheduleTask({
+        TaskSharedActions.unscheduleTask({
           id: this.data.task.id,
           reminderId: this.data.task.reminderId,
           isSkipToast: true,
@@ -259,7 +261,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
       });
     } else {
       this._store.dispatch(
-        unScheduleTask({
+        TaskSharedActions.unscheduleTask({
           id: this.data.task.id,
           reminderId: this.data.task.reminderId,
           isSkipToast: true,
@@ -282,7 +284,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
   }
 
   onTimeFocus(): void {
-    console.log('onTimeFocus');
+    Log.log('onTimeFocus');
     if (!this.selectedTime && this.isInitValOnTimeFocus) {
       this.isInitValOnTimeFocus = false;
 
@@ -302,7 +304,7 @@ export class DialogScheduleTaskComponent implements AfterViewInit {
 
   async submit(): Promise<void> {
     if (!this.selectedDate) {
-      console.warn('no selected date');
+      Log.err('no selected date');
       return;
     }
 

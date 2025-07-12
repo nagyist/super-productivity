@@ -7,7 +7,7 @@ import {
   NoRemoteMetaFile,
   RemoteFileNotFoundAPIError,
 } from '../errors/errors';
-import { pfLog } from '../util/log';
+import { PFLog } from '../../../core/log';
 import { MetaModelCtrl } from '../model-ctrl/meta-model-ctrl';
 import { EncryptAndCompressHandlerService } from './encrypt-and-compress-handler.service';
 import { validateMetaBase } from '../util/validate-meta-base';
@@ -32,7 +32,16 @@ export class MetaSyncService {
    * @returns Promise resolving when save is complete
    */
   async saveLocal(localMetaFileContent: LocalMeta): Promise<unknown> {
-    return this._metaModelCtrl.save(localMetaFileContent);
+    PFLog.normal(`${MetaSyncService.L}.${this.saveLocal.name}()`, {
+      localMetaFileContent,
+      lastUpdate: localMetaFileContent.lastUpdate,
+      lastSyncedUpdate: localMetaFileContent.lastSyncedUpdate,
+      willMatch:
+        localMetaFileContent.lastUpdate === localMetaFileContent.lastSyncedUpdate,
+    });
+    // Pass isIgnoreDBLock = true since we're saving during sync operations
+    // and the database is locked by _wrapSyncAction
+    return this._metaModelCtrl.save(localMetaFileContent, true);
   }
 
   /**
@@ -47,7 +56,7 @@ export class MetaSyncService {
     localRev: string | null = null,
   ): Promise<{ remoteMeta: RemoteMeta; remoteMetaRev: string }> {
     // return {} as any as MetaFileContent;
-    pfLog(2, `${MetaSyncService.L}.${this.download.name}()`, { localRev });
+    PFLog.normal(`${MetaSyncService.L}.${this.download.name}()`, { localRev });
     const syncProvider = this._currentSyncProvider$.getOrError();
 
     try {
@@ -106,7 +115,7 @@ export class MetaSyncService {
         meta.crossModelVersion,
       );
 
-    pfLog(2, `${MetaSyncService.L}.${this.upload.name}()`, { meta });
+    PFLog.normal(`${MetaSyncService.L}.${this.upload.name}()`, { meta });
 
     // Upload the data
     return (
@@ -126,7 +135,7 @@ export class MetaSyncService {
    * @throws NoRemoteMetaFile if the remote file doesn't exist
    */
   async getRev(localRev: string | null): Promise<string> {
-    pfLog(2, `${MetaSyncService.L}.${this.getRev.name}()`, { localRev });
+    PFLog.normal(`${MetaSyncService.L}.${this.getRev.name}()`, { localRev });
     const syncProvider = this._currentSyncProvider$.getOrError();
 
     try {
@@ -149,7 +158,7 @@ export class MetaSyncService {
    * @returns Promise resolving to the new revision string
    */
   async lock(revToMatch: string | null = null): Promise<string> {
-    pfLog(2, `${MetaSyncService.L}.${this.lock.name}()`, { revToMatch });
+    PFLog.normal(`${MetaSyncService.L}.${this.lock.name}()`, { revToMatch });
     const syncProvider = this._currentSyncProvider$.getOrError();
     const clientId = await this._metaModelCtrl.loadClientId();
 

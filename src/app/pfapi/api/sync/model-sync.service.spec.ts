@@ -1,6 +1,6 @@
 import { ModelSyncService } from './model-sync.service';
 import { MiniObservable } from '../util/mini-observable';
-import { ModelCfg } from '../pfapi.model';
+import { ModelCfg, RemoteMeta } from '../pfapi.model';
 import { Pfapi } from '../pfapi';
 import { SyncProviderServiceInterface } from './sync-provider.interface';
 import {
@@ -101,7 +101,10 @@ describe('ModelSyncService', () => {
 
     // Mock console and alert
     spyOn(console, 'log').and.stub();
-    spyOn(window, 'alert').and.stub();
+    // Alert is already mocked globally, just reset the spy
+    if ((window.alert as jasmine.Spy).calls) {
+      (window.alert as jasmine.Spy).calls.reset();
+    }
   });
 
   describe('upload operations', () => {
@@ -209,12 +212,24 @@ describe('ModelSyncService', () => {
 
       await service.updateLocalUpdated(['mainModel', 'singleModel'], [], dataMap);
 
-      expect(mockModelControllers.mainModel.save).toHaveBeenCalledWith({
-        data: 'updated-main-data',
-      });
-      expect(mockModelControllers.singleModel.save).toHaveBeenCalledWith({
-        data: 'updated-single-data',
-      });
+      expect(mockModelControllers.mainModel.save).toHaveBeenCalledWith(
+        {
+          data: 'updated-main-data',
+        },
+        {
+          isUpdateRevAndLastUpdate: true,
+          isIgnoreDBLock: true,
+        },
+      );
+      expect(mockModelControllers.singleModel.save).toHaveBeenCalledWith(
+        {
+          data: 'updated-single-data',
+        },
+        {
+          isUpdateRevAndLastUpdate: true,
+          isIgnoreDBLock: true,
+        },
+      );
     });
 
     it('should handle errors during local update', async () => {
@@ -238,13 +253,18 @@ describe('ModelSyncService', () => {
         },
       };
 
-      await service.updateLocalMainModelsFromRemoteMetaFile(remoteMeta);
+      await service.updateLocalMainModelsFromRemoteMetaFile({
+        ...remoteMeta,
+      } as RemoteMeta);
 
       expect(mockModelControllers.mainModel.save).toHaveBeenCalledWith(
         {
           data: 'meta-main-model-data',
         },
-        { isUpdateRevAndLastUpdate: false },
+        {
+          isUpdateRevAndLastUpdate: false,
+          isIgnoreDBLock: true,
+        },
       );
       expect(mockModelControllers.singleModel.save).not.toHaveBeenCalled();
     });
@@ -257,7 +277,9 @@ describe('ModelSyncService', () => {
         mainModelData: {},
       };
 
-      await service.updateLocalMainModelsFromRemoteMetaFile(remoteMeta);
+      await service.updateLocalMainModelsFromRemoteMetaFile({
+        ...remoteMeta,
+      } as RemoteMeta);
 
       expect(mockModelControllers.mainModel.save).not.toHaveBeenCalled();
       expect(mockModelControllers.singleModel.save).not.toHaveBeenCalled();

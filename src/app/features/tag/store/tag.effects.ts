@@ -13,7 +13,7 @@ import { Store } from '@ngrx/store';
 import { selectTodayTagTaskIds } from './tag.reducer';
 import { T } from '../../../t.const';
 import { SnackService } from '../../../core/snack/snack.service';
-import { deleteTag, deleteTags, planTasksForToday, updateTag } from './tag.actions';
+import { deleteTag, deleteTags, updateTag } from './tag.actions';
 import { TagService } from '../tag.service';
 import { TaskService } from '../../tasks/task.service';
 import { EMPTY, Observable, of } from 'rxjs';
@@ -30,6 +30,8 @@ import { getWorklogStr } from '../../../util/get-work-log-str';
 import { TranslateService } from '@ngx-translate/core';
 import { PlannerService } from '../../planner/planner.service';
 import { selectAllTasksDueToday } from '../../planner/store/planner.selectors';
+import { TaskSharedActions } from '../../../root-store/meta/task-shared.actions';
+import { Log } from '../../../core/log';
 
 @Injectable()
 export class TagEffects {
@@ -65,7 +67,7 @@ export class TagEffects {
   snackPlanForToday$: any = createEffect(
     () =>
       this._actions$.pipe(
-        ofType(planTasksForToday),
+        ofType(TaskSharedActions.planTasksForToday),
         filter(({ isShowSnack }) => !!isShowSnack),
         tap(async ({ taskIds }) => {
           // if (taskIds.length === 1) {
@@ -173,7 +175,7 @@ export class TagEffects {
           ),
         ),
         filter(({ nullTasks }) => nullTasks.length > 0),
-        tap((arg) => console.log('Error INFO Today:', arg)),
+        tap((arg) => Log.log('Error INFO Today:', arg)),
         tap(({ activeId, allTasks }) => {
           const allIds = allTasks.map((t) => t && t.id);
           const r = confirm(
@@ -220,7 +222,7 @@ export class TagEffects {
           newTaskIds.some((id, i) => id !== todayTagTaskIds[i]);
 
         if (isChanged && (tasksWithParentInListIds.length || dueNotInListIds.length)) {
-          console.log('Preventing parent and subtask in today list', {
+          Log.log('Preventing parent and subtask in today list', {
             isChanged,
             tasksWithParentInListIds,
             dueNotInListIds,

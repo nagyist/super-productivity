@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { DateAdapter } from '@angular/material/core';
-import moment from 'moment';
 import {
   AUTO_SWITCH_LNGS,
   LanguageCode,
@@ -12,6 +11,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { GlobalConfigService } from 'src/app/features/config/global-config.service';
 import { map, startWith } from 'rxjs/operators';
 import { DEFAULT_GLOBAL_CONFIG } from 'src/app/features/config/default-global-config.const';
+import { Log } from '../log';
 
 @Injectable({ providedIn: 'root' })
 export class LanguageService {
@@ -35,9 +35,9 @@ export class LanguageService {
       this._setFn(lng);
     } else {
       if (lng) {
-        console.error('Invalid language code', lng);
+        Log.err('Invalid language code', lng);
       } else {
-        console.warn('No language code provided');
+        Log.err('No language code provided');
       }
       this.setFromBrowserLngIfAutoSwitchLng();
     }
@@ -75,8 +75,6 @@ export class LanguageService {
 
     this.isRTL.next(this._isRTL(lng));
     this._translateService.use(lng);
-
-    moment.locale(momLng);
 
     this._dateAdapter.setLocale(momLng);
   }

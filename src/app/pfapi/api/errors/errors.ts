@@ -1,5 +1,6 @@
 import { IValidation } from 'typia';
 import { AllModelData } from '../pfapi.model';
+import { PFLog } from '../../../core/log';
 
 class AdditionalLogErrorBase<T = unknown[]> extends Error {
   additionalLog: T;
@@ -9,12 +10,12 @@ class AdditionalLogErrorBase<T = unknown[]> extends Error {
     super(typeof additional[0] === 'string' ? additional[0] : new.target.name);
 
     if (additional.length > 0) {
-      // pfLog(0, this.name, ...additional);
-      console.log(this.name, ...additional);
+      // PFLog.critical( this.name, ...additional);
+      PFLog.log(this.name, ...additional);
       try {
-        console.log('additional error log: ' + JSON.stringify(additional));
+        PFLog.log('additional error log: ' + JSON.stringify(additional));
       } catch (e) {
-        console.log('additional error log not stringified: ', additional, e);
+        PFLog.log('additional error log not stringified: ', additional, e);
       }
     }
     this.additionalLog = additional as T;
@@ -96,7 +97,7 @@ export class RevMismatchForModelError extends AdditionalLogErrorBase<string> {
 }
 
 export class UnknownSyncStateError extends Error {
-  override name = 'DBNotInitializedError';
+  override name = 'UnknownSyncStateError';
 }
 
 export class SyncInvalidTimeValuesError extends AdditionalLogErrorBase {
@@ -170,10 +171,6 @@ export class ModelIdWithoutCtrlError extends AdditionalLogErrorBase {
   override name = 'ModelIdWithoutCtrlError';
 }
 
-export class ModelValidationError extends AdditionalLogErrorBase {
-  override name = 'ModelValidationError';
-}
-
 export class ModelMigrationError extends AdditionalLogErrorBase {
   override name = 'ModelMigrationError';
 }
@@ -194,18 +191,57 @@ export class InvalidSyncProviderError extends Error {
   override name = 'InvalidSyncProviderError';
 }
 
+export class ModelValidationError extends Error {
+  override name = 'ModelValidationError';
+  additionalLog?: string;
+
+  constructor(params: {
+    id: string;
+    data: unknown;
+    validationResult?: IValidation<any>;
+    e?: unknown;
+  }) {
+    super('ModelValidationError');
+    PFLog.log(`ModelValidationError for model ${params.id}:`, params);
+
+    if (params.validationResult) {
+      PFLog.log('validation result: ', params.validationResult);
+
+      try {
+        if ('errors' in params.validationResult) {
+          const str = JSON.stringify(params.validationResult.errors);
+          PFLog.log('validation errors: ' + str);
+          this.additionalLog = `Model: ${params.id}, Errors: ${str.substring(0, 400)}`;
+        }
+      } catch (e) {
+        PFLog.err('Error stringifying validation errors:', e);
+      }
+    }
+
+    if (params.e) {
+      PFLog.log('Additional error:', params.e);
+    }
+  }
+}
+
 export class DataValidationFailedError extends Error {
   override name = 'DataValidationFailedError';
+  additionalLog?: string;
 
   constructor(validationResult: IValidation<AllModelData<any>>) {
     super('DataValidationFailedError');
-    console.log('validation result: ', validationResult);
+    PFLog.log('validation result: ', validationResult);
+
     try {
       if ('errors' in validationResult) {
-        console.log('validation errors_: ' + JSON.stringify(validationResult.errors));
+        const str = JSON.stringify(validationResult.errors);
+        PFLog.log('validation errors_: ' + str);
+        this.additionalLog = str.substring(0, 400);
       }
-      console.log('validation result_: ' + JSON.stringify(validationResult));
-    } catch (e) {}
+      PFLog.log('validation result_: ' + JSON.stringify(validationResult));
+    } catch (e) {
+      PFLog.err('Failed to stringify validation errors:', e);
+    }
   }
 }
 
@@ -215,7 +251,7 @@ export class ModelVersionToImportNewerThanLocalError extends AdditionalLogErrorB
 
 // --------------OTHER--------------
 
-export class InvalidFilePrefixError extends Error {
+export class InvalidFilePrefixError extends AdditionalLogErrorBase {
   override name = 'InvalidFilePrefixError';
 }
 

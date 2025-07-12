@@ -3,6 +3,7 @@ import {
   ErrorHandler,
   importProvidersFrom,
   LOCALE_ID,
+  provideExperimentalZonelessChangeDetection,
   SecurityContext,
 } from '@angular/core';
 
@@ -29,7 +30,6 @@ import { DatePipe } from '@angular/common';
 import { MarkdownModule, MARKED_OPTIONS, provideMarkdown } from 'ngx-markdown';
 import { MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { FeatureStoresModule } from './app/root-store/feature-stores.module';
-import { MatMomentDateModule } from '@angular/material-moment-adapter';
 import { MatNativeDateModule } from '@angular/material/core';
 import { FormlyConfigModule } from './app/ui/formly-config.module';
 import { markedOptionsFactory } from './app/ui/marked-options-factory';
@@ -48,6 +48,15 @@ import { StoreModule } from '@ngrx/store';
 import { reducers } from './app/root-store';
 import { undoTaskDeleteMetaReducer } from './app/root-store/meta/undo-task-delete.meta-reducer';
 import { actionLoggerReducer } from './app/root-store/meta/action-logger.reducer';
+import {
+  plannerSharedMetaReducer,
+  projectSharedMetaReducer,
+  tagSharedMetaReducer,
+  taskSharedCrudMetaReducer,
+  taskBatchUpdateMetaReducer,
+  taskSharedLifecycleMetaReducer,
+  taskSharedSchedulingMetaReducer,
+} from './app/root-store/meta/task-shared-meta-reducers';
 import { EffectsModule } from '@ngrx/effects';
 import { StoreDevtoolsModule } from '@ngrx/store-devtools';
 import { ReactiveFormsModule } from '@angular/forms';
@@ -60,6 +69,9 @@ import { ShortTime2Pipe } from './app/ui/pipes/short-time2.pipe';
 import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
 import { BackgroundTask } from '@capawesome/capacitor-background-task';
 import { promiseTimeout } from './app/util/promise-timeout';
+import { PLUGIN_INITIALIZER_PROVIDER } from './app/plugins/plugin-initializer';
+import { initializeMatMenuTouchFix } from './app/features/tasks/task-context-menu/mat-menu-touch-monkey-patch';
+import { Log } from './app/core/log';
 
 if (environment.production || environment.stage) {
   enableProdMode();
@@ -78,7 +90,6 @@ bootstrapApplication(AppComponent, {
   providers: [
     importProvidersFrom(
       FeatureStoresModule,
-      MatMomentDateModule,
       MatNativeDateModule,
       FormlyConfigModule,
       MarkdownModule.forRoot({
@@ -97,7 +108,17 @@ bootstrapApplication(AppComponent, {
       HammerModule,
       // NOTE: both need to be present to use forFeature stores
       StoreModule.forRoot(reducers, {
-        metaReducers: [undoTaskDeleteMetaReducer, actionLoggerReducer],
+        metaReducers: [
+          undoTaskDeleteMetaReducer,
+          taskSharedCrudMetaReducer,
+          taskBatchUpdateMetaReducer,
+          taskSharedLifecycleMetaReducer,
+          taskSharedSchedulingMetaReducer,
+          projectSharedMetaReducer,
+          tagSharedMetaReducer,
+          plannerSharedMetaReducer,
+          actionLoggerReducer,
+        ],
         ...(environment.production
           ? {
               runtimeChecks: {
@@ -113,14 +134,13 @@ bootstrapApplication(AppComponent, {
                 strictActionImmutability: true,
                 strictStateSerializability: true,
                 strictActionSerializability: true,
-                strictActionWithinNgZone: true,
                 strictActionTypeUniqueness: true,
               },
             }),
       }),
       EffectsModule.forRoot([]),
       !environment.production && !environment.stage
-        ? StoreDevtoolsModule.instrument({ connectInZone: true })
+        ? StoreDevtoolsModule.instrument()
         : [],
       ReactiveFormsModule,
       ServiceWorkerModule.register('ngsw-worker.js', {
@@ -158,27 +178,31 @@ bootstrapApplication(AppComponent, {
     ShortTime2Pipe,
     provideCharts(withDefaultRegisterables()),
     provideMarkdown(),
-    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     {
       provide: MAT_FORM_FIELD_DEFAULT_OPTIONS,
       useValue: { appearance: 'fill', subscriptSizing: 'dynamic' },
     },
-    { provide: HAMMER_GESTURE_CONFIG, useClass: MyHammerConfig },
     provideAnimations(),
     provideRouter(APP_ROUTES, withHashLocation(), withPreloading(PreloadAllModules)),
+    PLUGIN_INITIALIZER_PROVIDER,
+    provideExperimentalZonelessChangeDetection(),
   ],
 }).then(() => {
+  // Initialize touch fix for Material menus
+  initializeMatMenuTouchFix();
+
   // TODO make asset caching work for electron
+
   if (
     'serviceWorker' in navigator &&
     (environment.production || environment.stage) &&
     !IS_ELECTRON &&
     !IS_ANDROID_WEB_VIEW
   ) {
-    console.log('Registering Service worker');
+    Log.log('Registering Service worker');
     return navigator.serviceWorker.register('ngsw-worker.js').catch((err: any) => {
-      console.log('Service Worker Registration Error');
-      console.error(err);
+      Log.log('Service Worker Registration Error');
+      Log.err(err);
     });
   } else if ('serviceWorker' in navigator && (IS_ELECTRON || IS_ANDROID_WEB_VIEW)) {
     navigator.serviceWorker
@@ -189,8 +213,8 @@ bootstrapApplication(AppComponent, {
         }
       })
       .catch((e) => {
-        console.error('ERROR when unregistering service worker');
-        console.error(e);
+        Log.err('ERROR when unregistering service worker');
+        Log.err(e);
       });
   }
   return undefined;
@@ -202,7 +226,7 @@ window.addEventListener('touchmove', () => {});
 if (!(environment.production || environment.stage) && IS_ANDROID_WEB_VIEW) {
   setTimeout(() => {
     androidInterface.showToast('Android DEV works');
-    console.log(androidInterface);
+    Log.log(androidInterface);
   }, 1000);
 }
 
@@ -226,9 +250,9 @@ if (IS_ANDROID_WEB_VIEW) {
     const taskId = await BackgroundTask.beforeExit(async () => {
       // Run your code...
       // Finish the background task as soon as everything is done.
-      console.log('Time window for completing sync started');
+      Log.log('Time window for completing sync started');
       await promiseTimeout(20000);
-      console.log('Time window for completing sync ended. Closing app!');
+      Log.log('Time window for completing sync ended. Closing app!');
       BackgroundTask.finish({ taskId });
     });
   });

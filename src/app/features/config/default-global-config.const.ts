@@ -18,6 +18,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfigState = {
     isAutoAddWorkedOnToToday: true,
     isMinimizeToTray: false,
     isTrayShowCurrentTask: true,
+    isTrayShowCurrentCountdown: true,
     defaultProjectId: null,
     firstDayOfWeek: 1,
     startOfNextDay: 0,
@@ -30,6 +31,8 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfigState = {
 
 **Why do I want it?**
 `,
+    isOverlayIndicatorEnabled: false,
+    customTheme: 'default',
   },
   shortSyntax: {
     isEnableProject: true,
@@ -91,6 +94,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfigState = {
     addNewTask: 'Shift+A',
     addNewNote: 'n',
     openProjectNotes: 'Shift+N',
+    toggleTaskViewCustomizerPanel: 'c',
     toggleIssuePanel: 'p',
     toggleSideNav: 'Shift+D',
     showHelp: '?',

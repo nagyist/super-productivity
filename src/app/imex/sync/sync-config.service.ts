@@ -1,11 +1,13 @@
 import { inject, Injectable } from '@angular/core';
 import { PfapiService } from '../../pfapi/pfapi.service';
 import { GlobalConfigService } from '../../features/config/global-config.service';
-import { combineLatest, Observable } from 'rxjs';
+import { combineLatest, from, of, Observable } from 'rxjs';
 import { SyncConfig } from '../../features/config/global-config.model';
-import { map, tap } from 'rxjs/operators';
+import { switchMap, tap } from 'rxjs/operators';
 import { PrivateCfgByProviderId, SyncProviderId } from '../../pfapi/api';
 import { DEFAULT_GLOBAL_CONFIG } from '../../features/config/default-global-config.const';
+import { SyncLog } from '../../core/log';
+import { environment } from '../../../environments/environment';
 
 const PROP_MAP_TO_FORM: Record<SyncProviderId, keyof SyncConfig | null> = {
   [SyncProviderId.LocalFile]: 'localFileSync',
@@ -26,7 +28,7 @@ export class SyncConfigService {
     this._globalConfigService.sync$,
     this._pfapiService.currentProviderPrivateCfg$,
   ]).pipe(
-    map(([syncCfg, currentProviderCfg]) => {
+    switchMap(([syncCfg, currentProviderCfg]) => {
       // Base config with defaults
       const baseConfig = {
         ...DEFAULT_GLOBAL_CONFIG.sync,
@@ -35,10 +37,27 @@ export class SyncConfigService {
 
       // If no provider is active, return base config with empty encryption key
       if (!currentProviderCfg) {
-        return {
-          ...baseConfig,
-          encryptKey: '',
-        };
+        return from(
+          fetch('/assets/sync-config-default-override.json')
+            .then((res) => res.json())
+            .then((defaultOverride) => {
+              return {
+                ...baseConfig,
+                ...defaultOverride,
+                webDav: {
+                  ...baseConfig.webDav,
+                  ...defaultOverride.webDav,
+                },
+                encryptKey: '',
+              };
+            })
+            .catch(() => {
+              return {
+                ...baseConfig,
+                encryptKey: '',
+              };
+            }),
+        );
       }
 
       const prop = PROP_MAP_TO_FORM[currentProviderCfg.providerId];
@@ -57,9 +76,10 @@ export class SyncConfigService {
         result[prop] = currentProviderCfg.privateCfg;
       }
 
-      return result;
+      return of(result);
     }),
-    tap((v) => console.log('syncSettingsForm$', v)),
+    // NOTE: DO NOT LOG - contains passwords and encryption keys in production
+    tap((v) => SyncLog.log('syncSettingsForm$', environment.production ? typeof v : v)),
   );
 
   async updateEncryptionPassword(
@@ -123,7 +143,17 @@ export class SyncConfigService {
         userName: webDavCfg.userName || '',
         password: webDavCfg.password || '',
         syncFolderPath: webDavCfg.syncFolderPath || '',
+        encryptKey: webDavCfg.encryptKey || '',
       });
+      // } else if (providerId === SyncProviderId.LocalFile) {
+      //   const localFileCfg = privateCfg as PrivateCfgByProviderId<SyncProviderId.LocalFile>;
+      //   await this._pfapiService.pf.setPrivateCfgForSyncProvider(providerId, {
+      //     ...localFileCfg,
+      //     baseUrl: localFileCfg.baseUrl || '',
+      //     userName: localFileCfg.userName || '',
+      //     password: localFileCfg.password || '',
+      //     syncFolderPath: localFileCfg.syncFolderPath || '',
+      //   });
     } else {
       await this._pfapiService.pf.setPrivateCfgForSyncProvider(
         providerId,

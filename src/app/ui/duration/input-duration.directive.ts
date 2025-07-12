@@ -20,6 +20,7 @@ import { StringToMsPipe } from './string-to-ms.pipe';
 import { MsToStringPipe } from './ms-to-string.pipe';
 import { TranslateService } from '@ngx-translate/core';
 import { T } from 'src/app/t.const';
+import { Log } from '../../core/log';
 
 @Directive({
   selector: 'input[inputDuration]',
@@ -112,13 +113,16 @@ export class InputDurationDirective implements ControlValueAccessor, Validator, 
 
     // Apply external validator if available
     // if (this._validator) {
-    //   console.log(this._validator(control), this._validator);
+    //   Log.log(this._validator(control), this._validator);
     //   return this._validator(control);
     // }
 
     // Apply built-in validation
     const value = control.value;
-    if (value === null || value === undefined || Number.isNaN(value) || value === 0) {
+
+    // For duration fields, we only validate that the value is a valid number
+    // 0 is a valid duration (0 minutes, 0 hours, etc.)
+    if (value === null || value === undefined || Number.isNaN(value)) {
       return {
         duration: {
           invalid: true,
@@ -132,11 +136,20 @@ export class InputDurationDirective implements ControlValueAccessor, Validator, 
 
   private _processInput(strVal: string): void {
     try {
+      const digitWithTimeUnitRegex = /(^\d+h(?: \d+m)?$)|(^\d+m$)/i;
+      // If input is without unit like 1h, 2m, 3h 30m, etc, return
+      if (!digitWithTimeUnitRegex.test(strVal.trim())) {
+        return;
+      }
       // Convert input string to milliseconds
       const ms = strVal ? this._strToMs(strVal) : 0;
 
+      // Special handling for zero values with units (e.g., "0m", "0h")
+      const isZeroWithUnit = /^0+[smhd]$/i.test(strVal.trim());
+
       // don't interrupt typing for input without unit e.g. "32", "2h 32"
-      if (strVal !== this._msToStr(ms)) {
+      // but allow zero values with units to pass through
+      if (!isZeroWithUnit && strVal !== this._msToStr(ms)) {
         return;
       }
 
@@ -148,7 +161,7 @@ export class InputDurationDirective implements ControlValueAccessor, Validator, 
       this._previousMsValue = this._msValue;
     } catch (err) {
       // If parsing fails, set to null
-      console.error('Error parsing duration:', err);
+      Log.err('Error parsing duration:', err);
       this._msValue = null;
       this._onChange(null);
     }
